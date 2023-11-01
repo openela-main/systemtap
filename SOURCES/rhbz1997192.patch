@@ -1,0 +1,50 @@
+commit 47cab810bb7ea315a2dec23c2f61e7ba74515b82
+Author: Martin Cermak <mcermak@redhat.com>
+Date:   Fri Dec 16 16:08:20 2022 -0500
+
+    tapset: nfs.proc.commit_done compilation on some kernels
+    
+    Correct:
+    9.0 Server x86_64 # stap -vp3 nfs.proc.commit_done.stp
+    
+    Pass 1: parsed user script and 482 library scripts using 108088virt/88468res/12460shr/75476data kb, in 190usr/60sys/501real ms.
+    semantic error: invalid access '->task' vs 'void*': operator '->' at /usr/share/systemtap/tapset/linux/nfs_proc.stpm:16:21
+            source:         ( get_ip(&@nfs_data->task) )
+                                               ^
+            in expansion of macro: operator '@_nfs_data_server_ip' at /usr/share/systemtap/tapset/linux/nfs_proc.stp:1421:15
+            source:                 server_ip = @_nfs_data_server_ip($task->tk_calldata)
+                                                ^
+
+diff --git a/tapset/linux/nfs_proc.stp b/tapset/linux/nfs_proc.stp
+index 9b1f65f5f..4413384f9 100644
+--- a/tapset/linux/nfs_proc.stp
++++ b/tapset/linux/nfs_proc.stp
+@@ -1442,10 +1442,11 @@ probe nfs.proc3.commit_done = kernel.function("nfs3_commit_done") !,
+ 		valid = @_nfs_data_valid($data)
+ 	}
+ 	else {
+-		server_ip = @_nfs_data_server_ip($task->tk_calldata)
+-		prot = @_nfs_data_prot($task->tk_calldata)
+-		count = @_nfs_data_res_count($task->tk_calldata)
+-		valid = @_nfs_data_valid($task->tk_calldata)
++                _tk_calldata=@choose_defined($task->tk_calldata, @cast($task, "rpc_task", "kernel:nfs")->tk_calldata)
++                server_ip = @_nfs_data_server_ip(_tk_calldata)
++                prot = @_nfs_data_prot(_tk_calldata)
++                count = @_nfs_data_res_count(_tk_calldata)
++                valid = @_nfs_data_valid(_tk_calldata)
+ 	}
+ 	timestamp = 0
+ 	version = 3
+diff --git a/tapset/linux/nfs_proc.stpm b/tapset/linux/nfs_proc.stpm
+index 8576c0f33..4fe40b2a5 100644
+--- a/tapset/linux/nfs_proc.stpm
++++ b/tapset/linux/nfs_proc.stpm
+@@ -13,7 +13,7 @@
+ 
+ @define _nfs_data_server_ip(nfs_data)
+ %(
+-	( get_ip(&@nfs_data->task) )
++	( get_ip(@choose_defined(&@nfs_data->task, &@cast(@nfs_data, "nfs_commit_data", "kernel:nfs")->task)) )
+ %)
+ 
+ @define _nfs_data_prot(nfs_data)

@@ -1,0 +1,64 @@
+commit ab0c5c25509600b7c9cecc9e10baebc984082b50
+gpg: Signature made Fri 12 May 2023 11:18:18 AM EDT
+gpg:                using RSA key 5D38116FA4D3A7CC77E378D37E83610126DCC2E8
+gpg: Good signature from "Frank Ch. Eigler <fche@elastic.org>" [full]
+Author: Frank Ch. Eigler <fche@redhat.com>
+Date:   Fri May 12 11:13:45 2023 -0400
+
+    PR30442: failing optional statement probes should not trigger pass2 exceptions
+    
+    In tapsets.cxx, query_cu() and query_module() aggressively caught &
+    sess-print_error'd semantic_errors from subsidiary call sites.  They
+    are unaware of whether the probe in question is being resolved within
+    an optional (? or !) context.  Instead of this, they now simply let
+    the exceptions propagate out to derive_probes() or similar, which does
+    know whether exceptions are errors in that context.  That means
+    exceptions can propagate through elfutils iteration machinery too,
+    perhaps risking C level memory leaks, but so be it.
+    
+    This fix goes well beyond statement probes per se, but hand-testing
+    and the testsuite appear not to show regressions related to this.
+    
+    Added semok/badstmt.exp to test.
+
+diff --git a/tapsets.cxx b/tapsets.cxx
+index 859160bc5..7b7107371 100644
+--- a/tapsets.cxx
++++ b/tapsets.cxx
+@@ -2453,8 +2453,9 @@ query_cu (Dwarf_Die * cudie, dwarf_query * q)
+     }
+   catch (const semantic_error& e)
+     {
+-      q->sess.print_error (e);
+-      return DWARF_CB_ABORT;
++      // q->sess.print_error (e);
++      throw;
++      // return DWARF_CB_ABORT;
+     }
+ }
+ 
+@@ -2696,8 +2697,9 @@ query_module (Dwfl_Module *mod,
+     }
+   catch (const semantic_error& e)
+     {
+-      q->sess.print_error (e);
+-      return DWARF_CB_ABORT;
++      // q->sess.print_error (e);
++      // return DWARF_CB_ABORT;
++      throw;
+     }
+ }
+ 
+diff --git a/testsuite/semok/stmtbad.stp b/testsuite/semok/stmtbad.stp
+new file mode 100755
+index 000000000..06780790a
+--- /dev/null
++++ b/testsuite/semok/stmtbad.stp
+@@ -0,0 +1,7 @@
++#! /bin/sh
++
++exec stap -v -p2 -e 'probe oneshot {log("nothing") }
++                     probe process.statement("main@*:1")? { log("yo") }' -c stap
++
++# The optional misaddressed statement probe should let stap still
++# succeed with the oneshot probe.

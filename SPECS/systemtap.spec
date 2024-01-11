@@ -121,8 +121,9 @@ m     stapdev  stapdev
 
 
 Name: systemtap
-Version: 4.8
-Release: 2%{?release_override}%{?dist}
+# PRERELEASE
+Version: 4.9
+Release: 3%{?release_override}%{?dist}
 # for version, see also configure.ac
 
 
@@ -141,6 +142,7 @@ Release: 2%{?release_override}%{?dist}
 # systemtap-runtime-virtguest udev rules, init scripts/systemd service, req:-runtime
 # systemtap-runtime-python2 HelperSDT python2 module, req:-runtime
 # systemtap-runtime-python3 HelperSDT python3 module, req:-runtime
+# systemtap-jupyter      /usr/bin/stap-jupyter-* interactive-notebook req:systemtap
 #
 # Typical scenarios:
 #
@@ -158,12 +160,10 @@ License: GPLv2+
 URL: http://sourceware.org/systemtap/
 Source: ftp://sourceware.org/pub/systemtap/releases/systemtap-%{version}.tar.gz
 
-Patch1: rhbz1997192.patch
-Patch2: rhbz2145242.patch
-Patch3: rhbz2149223.patch
-Patch4: rhbz2149666.patch
-Patch5: rhbz2154430.patch
-
+Patch1: rhbz2223733.patch
+Patch2: rhbz2223735.patch
+Patch3: pr29108.patch
+Patch4: pr30749.patch
 
 
 # Build*
@@ -578,16 +578,26 @@ This package installs the services necessary on a virtual machine for a
 systemtap-runtime-virthost machine to execute systemtap scripts.
 %endif
 
+%if %{with_python3} && %{with_monitor}
+%package jupyter
+Summary: ISystemtap jupyter kernel and examples
+License: GPLv2+
+URL: http://sourceware.org/systemtap/
+Requires: systemtap = %{version}-%{release}
+
+%description jupyter
+This package includes files needed to build and run
+the interactive systemtap Jupyter kernel, either locally
+or within a container.
+%endif
 # ------------------------------------------------------------------------
 
 %prep
 %setup -q
-
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
-%patch5 -p1
+%patch -P1 -p1
+%patch -P2 -p1
+%patch -P3 -p1
+%patch -P4 -p1
 
 %build
 
@@ -1289,6 +1299,15 @@ exit 0
 %{_sbindir}/stap-exporter
 %endif
 
+%if %{with_python3} && %{with_monitor}
+%files jupyter
+%{_bindir}/stap-jupyter-container
+%{_bindir}/stap-jupyter-install
+%{_mandir}/man1/stap-jupyter.1*
+%dir %{_datadir}/systemtap
+%{_datadir}/systemtap/interactive-notebook
+%endif
+
 # ------------------------------------------------------------------------
 
 # Future new-release entries should be of the form
@@ -1298,6 +1317,18 @@ exit 0
 
 # PRERELEASE
 %changelog
+* Mon Aug 14 2023 Frank Ch. Eigler <fche@redhat.com> - 4.9-3
+- rhbz2231632
+- rhbz2231635
+
+* Tue Jul 18 2023 Frank Ch. Eigler <fche@redhat.com> - 4.9-2
+- rhbz2223733
+- rhbz2223735
+
+* Fri Apr 28 2023 Frank Ch. Eigler <fche@redhat.com> - 4.9-1
+- Upstream release, see wiki page below for detailed notes.
+  https://sourceware.org/systemtap/wiki/SystemTapReleases
+
 * Fri Dec 16 2022 Frank Ch. Eigler <fche@redhat.com> - 4.8-2
 - rhbz1997192
 - rhbz2145242

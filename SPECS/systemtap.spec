@@ -1,3 +1,5 @@
+# work around flakey gcc warnings
+%{!?with_Werror: %global with_Werror 0}
 %{!?with_sqlite: %global with_sqlite 0%{?fedora} >= 17 || 0%{?rhel} >= 7}
 # prefer prebuilt docs
 %{!?with_docs: %global with_docs 0}
@@ -90,7 +92,10 @@
 \
 g     stapusr  156\
 g     stapsys  157\
-g     stapdev  158
+g     stapdev  158\
+g     stapunpriv 159\
+u     stapunpriv 159      "systemtap unprivileged user"   /var/lib/stapunpriv   /sbin/nologin\
+m     stapunpriv stapunpriv
 
 %define _systemtap_server_preinstall \
 # See systemd-sysusers(8) sysusers.d(5)\
@@ -115,7 +120,7 @@ m     stapdev  stapdev
 
 Name: systemtap
 # PRERELEASE
-Version: 5.0
+Version: 5.1
 Release: 4%{?release_override}%{?dist}
 # for version, see also configure.ac
 
@@ -152,9 +157,10 @@ Summary: Programmable system-wide instrumentation system
 License: GPL-2.0-or-later
 URL: http://sourceware.org/systemtap/
 Source: ftp://sourceware.org/pub/systemtap/releases/systemtap-%{version}.tar.gz
-
-Patch1: RHEL-16549.patch
-Patch2: RHEL-18334.patch
+Patch1: RHEL-36199a.patch
+Patch2: RHEL-36199b.patch
+Patch3: PR31495.patch
+Patch4: RHEL-50107.patch
 
 # Build*
 BuildRequires: make
@@ -397,7 +403,7 @@ with the optional dtrace-compatibility preprocessor to process related
 
 %package testsuite
 Summary: Instrumentation System Testsuite
-License: GPL-2.0-or-later AND GPL-2.0-only AND GPL-3.0-or-later AND MIT
+License: GPL-2.0-or-later AND GPL AND GPL-2.0-only AND GPL-3.0-or-later AND MIT
 URL: http://sourceware.org/systemtap/
 Requires: systemtap = %{version}-%{release}
 Requires: systemtap-sdt-devel = %{version}-%{release}
@@ -566,7 +572,6 @@ This package installs the services necessary on a virtual machine for a
 systemtap-runtime-virthost machine to execute systemtap scripts.
 %endif
 
-%if %{with_python3} && %{with_monitor}
 %package jupyter
 Summary: ISystemtap jupyter kernel and examples
 License: GPL-2.0-or-later
@@ -577,13 +582,15 @@ Requires: systemtap = %{version}-%{release}
 This package includes files needed to build and run
 the interactive systemtap Jupyter kernel, either locally
 or within a container.
-%endif
+
 # ------------------------------------------------------------------------
 
 %prep
 %setup -q
 %patch -P1 -p1
 %patch -P2 -p1
+%patch -P3 -p1
+%patch -P4 -p1
 
 %build
 
@@ -592,6 +599,13 @@ or within a container.
 %global dyninst_config --with-dyninst
 %else
 %global dyninst_config --without-dyninst
+%endif
+
+# Enable/disable the dyninst pure-userspace backend
+%if %{with_Werror}
+%global Werror_config --enable-Werror
+%else
+%global Werror_config --disable-Werror
 %endif
 
 # Enable/disable the sqlite coverage testing support
@@ -681,7 +695,7 @@ or within a container.
 # We don't ship compileworthy python code, just oddball samples
 %global py_auto_byte_compile 0
 
-%configure %{dyninst_config} %{sqlite_config} %{crash_config} %{docs_config} %{rpm_config} %{java_config} %{virt_config} %{dracut_config} %{python3_config} %{python2_probes_config} %{python3_probes_config} %{httpd_config} %{bpf_config} %{debuginfod_config} --disable-silent-rules --with-extra-version="rpm %{version}-%{release}"
+%configure %{Werror_config} %{dyninst_config} %{sqlite_config} %{crash_config} %{docs_config} %{rpm_config} %{java_config} %{virt_config} %{dracut_config} %{python3_config} %{python2_probes_config} %{python3_probes_config} %{httpd_config} %{bpf_config} %{debuginfod_config} --disable-silent-rules --with-extra-version="rpm %{version}-%{release}"
 make %{?_smp_mflags} V=1
 
 
@@ -839,6 +853,9 @@ echo '%_systemtap_runtime_preinstall' | systemd-sysusers --replace=%{_sysusersdi
 getent group stapusr >/dev/null || groupadd -f -g 156 -r stapusr
 getent group stapsys >/dev/null || groupadd -f -g 157 -r stapsys
 getent group stapdev >/dev/null || groupadd -f -g 158 -r stapdev
+getent passwd stapunpriv >/dev/null || \
+  useradd -c "Systemtap Unprivileged User" -u 159 -g stapunpriv -d %{_localstatedir}/lib/stapunpriv -r -s /sbin/nologin stapunpriv 2>/dev/null || \
+  useradd -c "Systemtap Unprivileged User" -g stapunpriv -d %{_localstatedir}/lib/stapunpriv -r -s /sbin/nologin stapunpriv
 %endif
 exit 0
 
@@ -1285,14 +1302,12 @@ exit 0
 %{_sbindir}/stap-exporter
 %endif
 
-%if %{with_python3} && %{with_monitor}
 %files jupyter
 %{_bindir}/stap-jupyter-container
 %{_bindir}/stap-jupyter-install
 %{_mandir}/man1/stap-jupyter.1*
 %dir %{_datadir}/systemtap
 %{_datadir}/systemtap/interactive-notebook
-%endif
 
 # ------------------------------------------------------------------------
 
@@ -1303,6 +1318,20 @@ exit 0
 
 # PRERELEASE
 %changelog
+* Mon Sep 9 2024 Martin Cermak <mcermak@redhat.com> - 5.1-4
+- RHEL-50107.patch:  Make systemtap compatible with kernel
+  commit 68cbd415dd4b .  Related: RHEL-56962 .
+
+* Thu May 16 2024 Martin Cermak <mcermak@redhat.com> - 5.1-3
+- RHEL-7318
+
+* Tue May 14 2024 William Cohen <wcohen@redhat.com> - 5.1-2
+- RHEL-36199
+
+* Fri Apr 26 2024 Frank Ch. Eigler <fche@redhat.com> - 5.1-1
+- Upstream release, see wiki page below for detailed notes.
+  https://sourceware.org/systemtap/wiki/SystemTapReleases
+
 * Wed Dec 6 2023 William Cohen <wcohen@redhat.com> - 5.0-4
 - RHEL-18334
 

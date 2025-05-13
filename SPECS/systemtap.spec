@@ -120,8 +120,8 @@ m     stapdev  stapdev
 
 Name: systemtap
 # PRERELEASE
-Version: 5.1
-Release: 4%{?release_override}%{?dist}
+Version: 5.2
+Release: 2%{?release_override}%{?dist}
 # for version, see also configure.ac
 
 
@@ -133,7 +133,8 @@ Release: 4%{?release_override}%{?dist}
 # systemtap-runtime      /usr/bin/staprun, /usr/bin/stapsh, /usr/bin/stapdyn
 # systemtap-client       /usr/bin/stap, samples, docs, tapset(bonus), req:-runtime
 # systemtap-initscript   /etc/init.d/systemtap, dracut module, req:systemtap
-# systemtap-sdt-devel    /usr/include/sys/sdt.h /usr/bin/dtrace
+# systemtap-sdt-devel    /usr/include/sys/sdt.h AND /usr/bin/dtrace
+# systemtap-sdt-dtrace   /usr/bin/dtrace
 # systemtap-testsuite    /usr/share/systemtap/testsuite*, req:systemtap, req:sdt-devel
 # systemtap-runtime-java libHelperSDT.so, HelperSDT.jar, stapbm, req:-runtime
 # systemtap-runtime-virthost  /usr/bin/stapvirt, req:libvirt req:libxml2
@@ -155,12 +156,9 @@ Release: 4%{?release_override}%{?dist}
 
 Summary: Programmable system-wide instrumentation system
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Source: ftp://sourceware.org/pub/systemtap/releases/systemtap-%{version}.tar.gz
-Patch1: RHEL-36199a.patch
-Patch2: RHEL-36199b.patch
-Patch3: PR31495.patch
-Patch4: RHEL-50107.patch
+Patch0: PR32302.patch
 
 # Build*
 BuildRequires: make
@@ -263,7 +261,7 @@ the components needed to locally develop and execute systemtap scripts.
 %package server
 Summary: Instrumentation System Server
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap-devel = %{version}-%{release}
 Conflicts: systemtap-devel < %{version}-%{release}
 Conflicts: systemtap-runtime < %{version}-%{release}
@@ -293,7 +291,7 @@ compiles systemtap scripts to kernel objects on their demand.
 %package devel
 Summary: Programmable system-wide instrumentation system - development headers, tools
 License: GPL-2.0-or-later AND GPL-2.0-only AND BSD-3-Clause AND LGPL-2.1-only AND BSD-2-Clause
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 
 %if 0%{?rhel} >= 8 || 0%{?fedora} >= 20
 Recommends: (kernel-debug-devel if kernel-debug)
@@ -323,7 +321,7 @@ a copy of the standard tapset library and the runtime library C files.
 %package runtime
 Summary: Programmable system-wide instrumentation system - runtime
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires(pre): shadow-utils
 Conflicts: systemtap-devel < %{version}-%{release}
 Conflicts: systemtap-server < %{version}-%{release}
@@ -338,7 +336,7 @@ using a local or remote systemtap-devel installation.
 %package client
 Summary: Programmable system-wide instrumentation system - client
 License: GPL-2.0-or-later AND GPL-2.0-only AND BSD-3-Clause AND LGPL-2.1-only AND GFDL-1.2-or-later AND BSD-2-Clause
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: zip unzip
 Requires: systemtap-runtime = %{version}-%{release}
 Requires: coreutils grep sed unzip zip
@@ -351,17 +349,19 @@ Requires: mokutil
 %endif
 
 %description client
-This package contains/requires the components needed to develop
-systemtap scripts, and compile them using a local systemtap-devel
-or a remote systemtap-server installation, then run them using a
-local or remote systemtap-runtime.  It includes script samples and
+This package contains/requires only the components needed to
+use systemtap scripts by compiling them using a local or a remote
+systemtap-server service, then run them using a local or
+remote systemtap-runtime.  It includes script samples and
 documentation, and a copy of the tapset library for reference.
-
+It does NOT include all the components for running a systemtap
+script in a self-contained fashion; for that, use the -devel
+subpackage instead.
 
 %package initscript
 Summary: Systemtap Initscripts
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap = %{version}-%{release}
 %if %{with_systemd}
 Requires: systemd
@@ -379,9 +379,20 @@ boot-time probing if supported.
 
 
 %package sdt-devel
-Summary: Static probe support tools
+Summary: Static probe support header files
 License: GPL-2.0-or-later AND CC0-1.0
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
+
+%description sdt-devel
+This package includes the <sys/sdt.h> header file used for static
+instrumentation compiled into userspace programs.
+
+
+%package sdt-dtrace
+Summary: Static probe support dtrace tool
+License: GPL-2.0-or-later AND CC0-1.0
+URL: https://sourceware.org/systemtap/
+Provides: dtrace = %{version}-%{release}
 %if %{with_pyparsing}
 %if %{with_python3}
 Requires: python3-pyparsing
@@ -394,17 +405,15 @@ Requires: python2-pyparsing
 %endif
 %endif
 
-%description sdt-devel
-This package includes the <sys/sdt.h> header file used for static
-instrumentation compiled into userspace programs and libraries, along
-with the optional dtrace-compatibility preprocessor to process related
-.d files into tracing-macro-laden .h headers.
+%description sdt-dtrace
+This package includes the dtrace-compatibility preprocessor
+to process related .d files into tracing-macro-laden .h headers.
 
 
 %package testsuite
 Summary: Instrumentation System Testsuite
-License: GPL-2.0-or-later AND GPL AND GPL-2.0-only AND GPL-3.0-or-later AND MIT
-URL: http://sourceware.org/systemtap/
+License: GPL-2.0-or-later AND GPL-2.0-only AND GPL-3.0-or-later AND MIT
+URL: https://sourceware.org/systemtap/
 Requires: systemtap = %{version}-%{release}
 Requires: systemtap-sdt-devel = %{version}-%{release}
 Requires: systemtap-server = %{version}-%{release}
@@ -476,7 +485,7 @@ systemtap on the current system.
 %package runtime-java
 Summary: Systemtap Java Runtime Support
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap-runtime = %{version}-%{release}
 # work around fedora ci gating kvetching about i686<->x86-64 conflicts
 %ifarch x86_64
@@ -498,7 +507,7 @@ that probe Java processes running on the OpenJDK runtimes using Byteman.
 %package runtime-python2
 Summary: Systemtap Python 2 Runtime Support
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap-runtime = %{version}-%{release}
 
 %description runtime-python2
@@ -510,7 +519,7 @@ that probe python 2 processes.
 %package runtime-python3
 Summary: Systemtap Python 3 Runtime Support
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap-runtime = %{version}-%{release}
 
 %if ! (%{with_python2_probes})
@@ -527,7 +536,7 @@ that probe python 3 processes.
 %package exporter
 Summary: Systemtap-prometheus interoperation mechanism
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap-runtime = %{version}-%{release}
 
 %description exporter
@@ -540,7 +549,7 @@ to remote requesters on demand.
 %package runtime-virthost
 Summary: Systemtap Cross-VM Instrumentation - host
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 # only require libvirt-libs really
 #Requires: libvirt >= 1.0.2
 Requires: libxml2
@@ -555,7 +564,7 @@ connection.
 %package runtime-virtguest
 Summary: Systemtap Cross-VM Instrumentation - guest
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap-runtime = %{version}-%{release}
 %if %{with_systemd}
 Requires(post): findutils coreutils
@@ -575,7 +584,7 @@ systemtap-runtime-virthost machine to execute systemtap scripts.
 %package jupyter
 Summary: ISystemtap jupyter kernel and examples
 License: GPL-2.0-or-later
-URL: http://sourceware.org/systemtap/
+URL: https://sourceware.org/systemtap/
 Requires: systemtap = %{version}-%{release}
 
 %description jupyter
@@ -587,10 +596,7 @@ or within a container.
 
 %prep
 %setup -q
-%patch -P1 -p1
-%patch -P2 -p1
-%patch -P3 -p1
-%patch -P4 -p1
+%patch -P0 -p1
 
 %build
 
@@ -734,9 +740,6 @@ find testsuite -type f -name '.gitignore' -print0 | xargs -0 rm -f
 # So, we change permissions so that they can read it.  We'll set the
 # permissions back to 04110 in the %files section below.
 chmod 755 $RPM_BUILD_ROOT%{_bindir}/staprun
-
-#install the useful stap-prep script
-install -c -m 755 stap-prep $RPM_BUILD_ROOT%{_bindir}/stap-prep
 
 # Copy over the testsuite
 cp -rp testsuite $RPM_BUILD_ROOT%{_datadir}/systemtap
@@ -1135,13 +1138,14 @@ exit 0
 %if %{with_emacsvim}
 %{_emacs_sitelispdir}/*.el*
 %{_emacs_sitestartdir}/systemtap-init.el
-%{_datadir}/vim/vimfiles/*/*.vim
+%{_datadir}/vim/vimfiles
 %endif
 # Notice that the stap-resolve-module-function.py file is used by
 # *both* the python2 and python3 subrpms.  Both subrpms use that same
 # python script to help list python probes.
 %if %{with_python3_probes} || %{with_python2_probes}
 %{_libexecdir}/systemtap/python/stap-resolve-module-function.py
+%dir %{_libexecdir}/systemtap/python
 %exclude %{_libexecdir}/systemtap/python/stap-resolve-module-function.py?
 %endif
 
@@ -1236,14 +1240,22 @@ exit 0
 
 
 %files sdt-devel
-%{_bindir}/dtrace
 %{_includedir}/sys/sdt.h
 %{_includedir}/sys/sdt-config.h
-%{_mandir}/man1/dtrace.1*
 %{_rpmmacrodir}/macros.systemtap
 %doc README AUTHORS NEWS 
 %{!?_licensedir:%global license %%doc}
 %license COPYING
+%{_bindir}/dtrace
+%{_mandir}/man1/dtrace.1*
+
+
+%files sdt-dtrace
+%{_bindir}/dtrace
+%doc README AUTHORS NEWS
+%{!?_licensedir:%global license %%doc}
+%license COPYING
+%{_mandir}/man1/dtrace.1*
 
 
 %files testsuite
@@ -1314,10 +1326,17 @@ exit 0
 # Future new-release entries should be of the form
 # * DDD MMM DD YYYY YOURNAME <YOUREMAIL> - V-R
 # - Upstream release, see wiki page below for detailed notes.
-#   http://sourceware.org/systemtap/wiki/SystemTapReleases
+#   https://sourceware.org/systemtap/wiki/SystemTapReleases
 
 # PRERELEASE
 %changelog
+* Fri Nov 15 2024 Frank Ch. Eigler <fche@redhat.com> - 5.2-2
+- RHEL-67586: supply /usr/bin/dtrace in sdt-devel subrpm too
+
+* Mon Nov 11 2024 Frank Ch. Eigler <fche@redhat.com> - 5.2-1
+- Upstream release, see wiki page below for detailed notes.
+- https://sourceware.org/systemtap/wiki/SystemTapReleases
+
 * Mon Sep 9 2024 Martin Cermak <mcermak@redhat.com> - 5.1-4
 - RHEL-50107.patch:  Make systemtap compatible with kernel
   commit 68cbd415dd4b .  Related: RHEL-56962 .

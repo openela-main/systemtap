@@ -1,0 +1,59 @@
+commit ea6ec6da37f1d3ec9ab1c3b5808287676c9d3742
+Author: William Cohen <wcohen@redhat.com>
+Date:   Mon Jun 2 11:15:44 2025 -0400
+
+    RHEL-90805: Fix dev.stp tapset to work with RHEL 9.7 kernel
+    
+    RHEL 9.7 kernels have backported block dev support from Linux 6.14.
+    The test in the dev.stp tapset checked the kernel version to determine
+    where to get information and that test did not work in the case of
+    code backported to the older RHEL 9 Linux 5.14 kernel.  The dev.stp
+    code has been reworked to search for the particular member field
+    holding the information instead.
+
+diff --git a/tapset/linux/dev.stp b/tapset/linux/dev.stp
+index f6b90c5d3..56b8e63c4 100644
+--- a/tapset/linux/dev.stp
++++ b/tapset/linux/dev.stp
+@@ -64,17 +64,19 @@ function disk_name:string(hd:long, partno:long)
+ 		return sprintf("%s%d", disk_name, partno)
+ }
+ 
+-%( kernel_v >= "6.10" %?
+ %{
++#include <linux/blk_types.h>
+ #include <linux/blkdev.h>
+ %}
+ 
+ function bdev_partno(bdev:long)
+ %{ /* pure */ /* unprivileged */
++#ifdef BD_PARTNO
+   STAP_RETURN(bdev_partno((const struct block_device *) STAP_ARG_bdev));
++#else
++  STAP_RETURN(0);
++#endif
+ %}
+-%:
+-%)
+ 
+ function bdevname:string(bdev:long)
+ {
+@@ -84,15 +86,13 @@ function bdevname:string(bdev:long)
+ 
+ 	hd = bdev->bd_disk
+ 
+-%( kernel_v >= "6.10" %?
+-	partno = bdev_partno(bdev)
+-%:
+-	if (@defined(@cast(bdev, "block_device", "kernel")->bd_partno))
++	if (@defined(&bdev->__bd_flags))
++		partno = bdev_partno(bdev)
++	else if (@defined(bdev->bd_partno))
+ 		partno = bdev->bd_partno
+ 	else if (bdev->bd_part)
+ 		partno = bdev->bd_part->partno
+ 	else
+ 		partno = MINOR(bdev->bd_dev) - hd->first_minor;
+-%)
+ 	return disk_name(hd, partno)
+ }

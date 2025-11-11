@@ -13,8 +13,8 @@
 %endif
 %{!?with_rpm: %global with_rpm 1}
 %{!?elfutils_version: %global elfutils_version 0.179}
-%{!?with_boost: %global with_boost 0}
-%ifarch %{ix86} x86_64 ppc ppc64 ppc64le aarch64
+%{!?with_boost: %global with_boost 1}
+%ifarch x86_64 ppc ppc64 ppc64le aarch64
 %{!?with_dyninst: %global with_dyninst 0%{?fedora} >= 18 || 0%{?rhel} >= 7}
 %else
 %{!?with_dyninst: %global with_dyninst 0}
@@ -45,6 +45,10 @@
 %{!?with_httpd: %global with_httpd 0}
 %{!?with_specific_python: %global with_specific_python 0%{?fedora} >= 31}
 %{!?with_sysusers: %global with_sysusers 0%{?fedora} >= 32 || 0%{?rhel} >= 9}
+# NB: can't turn this on by default on any distro version whose builder system
+# may run kernels different than the distro version itself.
+%{!?with_check: %global with_check 0}
+
 
 # Virt is supported on these arches, even on el7, but it's not in core EL7
 %if 0%{?rhel} && 0%{?rhel} <= 7
@@ -120,8 +124,8 @@ m     stapdev  stapdev
 
 Name: systemtap
 # PRERELEASE
-Version: 5.2
-Release: 2%{?release_override}%{?dist}
+Version: 5.3
+Release: 3b%{?release_override}%{?dist}
 # for version, see also configure.ac
 
 
@@ -133,7 +137,7 @@ Release: 2%{?release_override}%{?dist}
 # systemtap-runtime      /usr/bin/staprun, /usr/bin/stapsh, /usr/bin/stapdyn
 # systemtap-client       /usr/bin/stap, samples, docs, tapset(bonus), req:-runtime
 # systemtap-initscript   /etc/init.d/systemtap, dracut module, req:systemtap
-# systemtap-sdt-devel    /usr/include/sys/sdt.h AND /usr/bin/dtrace
+# systemtap-sdt-devel    /usr/include/sys/sdt.h
 # systemtap-sdt-dtrace   /usr/bin/dtrace
 # systemtap-testsuite    /usr/share/systemtap/testsuite*, req:systemtap, req:sdt-devel
 # systemtap-runtime-java libHelperSDT.so, HelperSDT.jar, stapbm, req:-runtime
@@ -158,7 +162,9 @@ Summary: Programmable system-wide instrumentation system
 License: GPL-2.0-or-later
 URL: https://sourceware.org/systemtap/
 Source: ftp://sourceware.org/pub/systemtap/releases/systemtap-%{version}.tar.gz
-Patch0: PR32302.patch
+
+Patch1: systemtap-defined.patch
+Patch2: systemtap-dev_tapset.patch
 
 # Build*
 BuildRequires: make
@@ -186,9 +192,7 @@ BuildRequires: pkgconfig(ncurses)
 BuildRequires: systemd
 %endif
 # Needed for libstd++ < 4.0, without <tr1/memory>
-%if %{with_boost}
 BuildRequires: boost-devel
-%endif
 %if %{with_crash}
 BuildRequires: crash-devel zlib-devel
 %endif
@@ -242,8 +246,14 @@ BuildRequires: libmicrohttpd-devel
 BuildRequires: libuuid-devel
 %endif
 %if %{with_sysusers}
-BuildRequires:  systemd-rpm-macros
+BuildRequires: systemd-rpm-macros
 %endif
+%if %{with_check}
+BuildRequires: kernel-devel
+# and some of the same Requires: as below
+BuildRequires: dejagnu gcc make
+%endif
+
 
 
 # Install requirements
@@ -382,11 +392,12 @@ boot-time probing if supported.
 Summary: Static probe support header files
 License: GPL-2.0-or-later AND CC0-1.0
 URL: https://sourceware.org/systemtap/
+# for RHEL buildability compatibility, pull in sdt-dtrace at all times
+Requires: systemtap-sdt-dtrace = %{version}-%{release}
 
 %description sdt-devel
 This package includes the <sys/sdt.h> header file used for static
 instrumentation compiled into userspace programs.
-
 
 %package sdt-dtrace
 Summary: Static probe support dtrace tool
@@ -595,8 +606,7 @@ or within a container.
 # ------------------------------------------------------------------------
 
 %prep
-%setup -q
-%patch -P0 -p1
+%autosetup -p1
 
 %build
 
@@ -849,9 +859,18 @@ done
 %py3_shebang_fix %{buildroot}%{python3_sitearch} %{buildroot}%{_bindir}/*
 %endif
 
+%check
+%if %{with_check}
+make check RUNTESTFLAGS=environment_sanity.exp
+%endif
+
+
 %pre runtime
 %if %{with_sysusers}
+%if (0%{?fedora} && 0%{?fedora} < 42) || (0%{?rhel} && 0%{?rhel} < 11)
 echo '%_systemtap_runtime_preinstall' | systemd-sysusers --replace=%{_sysusersdir}/systemtap-runtime.conf -
+exit 0
+%endif
 %else
 getent group stapusr >/dev/null || groupadd -f -g 156 -r stapusr
 getent group stapsys >/dev/null || groupadd -f -g 157 -r stapsys
@@ -859,23 +878,29 @@ getent group stapdev >/dev/null || groupadd -f -g 158 -r stapdev
 getent passwd stapunpriv >/dev/null || \
   useradd -c "Systemtap Unprivileged User" -u 159 -g stapunpriv -d %{_localstatedir}/lib/stapunpriv -r -s /sbin/nologin stapunpriv 2>/dev/null || \
   useradd -c "Systemtap Unprivileged User" -g stapunpriv -d %{_localstatedir}/lib/stapunpriv -r -s /sbin/nologin stapunpriv
-%endif
 exit 0
+%endif
 
 %pre server
 %if %{with_sysusers}
+%if (0%{?fedora} && 0%{?fedora} < 42) || (0%{?rhel} && 0%{?rhel} < 11)
 echo '%_systemtap_server_preinstall' | systemd-sysusers --replace=%{_sysusersdir}/systemtap-server.conf -
+exit 0
+%endif
 %else
 getent group stap-server >/dev/null || groupadd -f -g 155 -r stap-server
 getent passwd stap-server >/dev/null || \
   useradd -c "Systemtap Compile Server" -u 155 -g stap-server -d %{_localstatedir}/lib/stap-server -r -s /sbin/nologin stap-server 2>/dev/null || \
   useradd -c "Systemtap Compile Server" -g stap-server -d %{_localstatedir}/lib/stap-server -r -s /sbin/nologin stap-server
-%endif
 exit 0
+%endif
 
 %pre testsuite
 %if %{with_sysusers}
+%if (0%{?fedora} && 0%{?fedora} < 42) || (0%{?rhel} && 0%{?rhel} < 11)
 echo '%_systemtap_testsuite_preinstall' | systemd-sysusers --replace=%{_sysusersdir}/systemtap-testsuite.conf -
+exit 0
+%endif
 %else
 getent passwd stapusr >/dev/null || \
     useradd -c "Systemtap 'stapusr' User" -g stapusr -r -s /sbin/nologin stapusr
@@ -883,8 +908,8 @@ getent passwd stapsys >/dev/null || \
     useradd -c "Systemtap 'stapsys' User" -g stapsys -G stapusr -r -s /sbin/nologin stapsys
 getent passwd stapdev >/dev/null || \
     useradd -c "Systemtap 'stapdev' User" -g stapdev -G stapusr -r -s /sbin/nologin stapdev
-%endif
 exit 0
+%endif
 
 %post server
 
@@ -1246,8 +1271,6 @@ exit 0
 %doc README AUTHORS NEWS 
 %{!?_licensedir:%global license %%doc}
 %license COPYING
-%{_bindir}/dtrace
-%{_mandir}/man1/dtrace.1*
 
 
 %files sdt-dtrace
@@ -1330,6 +1353,16 @@ exit 0
 
 # PRERELEASE
 %changelog
+* Thu Jun 5 2025 William Cohen <wcohen@redhat.com> - 5.3-3
+- RHEL-95272
+
+* Mon May 12 2025 Martin Cermak <mcermak@redhat.com> - 5.3-2
+- RHEL-RHEL-89808: stap-server log owned by root
+
+* Fri May 02 2025 Frank Ch. Eigler <fche@redhat.com> - 5.3-1
+- Upstream release, see wiki page below for detailed notes.
+  https://sourceware.org/systemtap/wiki/SystemTapReleases
+
 * Wed Feb 05 2025 Frank Ch. Eigler <fche@redhat.com> - 5.2-2
 - RHEL-78062: supply /usr/bin/dtrace in sdt-devel subrpm too
 

@@ -98,34 +98,40 @@ g     stapusr  156\
 g     stapsys  157\
 g     stapdev  158\
 g     stapunpriv 159\
-u     stapunpriv 159      "systemtap unprivileged user"   /var/lib/stapunpriv   /sbin/nologin\
+u     stapunpriv 159      "systemtap unprivileged user"\
 m     stapunpriv stapunpriv
 
 %define _systemtap_server_preinstall \
 # See systemd-sysusers(8) sysusers.d(5)\
 \
 g     stap-server  -\
-u     stap-server  -      "systemtap compiler server"   /var/lib/stap-server   /sbin/nologin\
+u     stap-server  -      "systemtap compiler server"   /var/lib/stap-server\
 m     stap-server stap-server
 
 
 %define _systemtap_testsuite_preinstall \
 # See systemd-sysusers(8) sysusers.d(5)\
 \
-u     stapusr  -          "systemtap testsuite user"    /   /sbin/nologin\
-u     stapsys  -          "systemtap testsuite user"    /   /sbin/nologin\
-u     stapdev  -          "systemtap testsuite user"    /   /sbin/nologin\
+u     stapusr  -          "systemtap testsuite user"\
+u     stapsys  -          "systemtap testsuite user"\
+u     stapdev  -          "systemtap testsuite user"\
 m     stapusr  stapusr\
 m     stapsys  stapusr\
 m     stapsys  stapsys\
 m     stapdev  stapusr\
 m     stapdev  stapdev
 
+%define _systemtap_server_preinstall_tmpfiles \
+# See systemd-tmpfiles(8) tmpfiles.d(5)\
+d /var/lib/stap-server 0750 stap-server stap-server -\
+d /var/lib/stap-server/.systemtap 0700 stap-server stap-server -\
+d /var/log/stap-server 0755 stap-server stap-server -\
+f /var/log/stap-server/log 0644 stap-server stap-server -
 
 Name: systemtap
 # PRERELEASE
-Version: 5.3
-Release: 3%{?release_override}%{?dist}
+Version: 5.4
+Release: 4%{?release_override}%{?dist}
 # for version, see also configure.ac
 
 
@@ -163,8 +169,7 @@ License: GPL-2.0-or-later
 URL: https://sourceware.org/systemtap/
 Source: ftp://sourceware.org/pub/systemtap/releases/systemtap-%{version}.tar.gz
 
-Patch1: systemtap-defined.patch
-Patch2: systemtap-dev_tapset.patch
+Patch1: 0001-PR33428-imply-kernel-vmlinux-h.patch
 
 # Build*
 BuildRequires: make
@@ -392,12 +397,15 @@ boot-time probing if supported.
 Summary: Static probe support header files
 License: GPL-2.0-or-later AND CC0-1.0
 URL: https://sourceware.org/systemtap/
+%if 0%{?rhel} && 0%{?rhel} <= 10
 # for RHEL buildability compatibility, pull in sdt-dtrace at all times
 Requires: systemtap-sdt-dtrace = %{version}-%{release}
+%endif
 
 %description sdt-devel
 This package includes the <sys/sdt.h> header file used for static
 instrumentation compiled into userspace programs.
+
 
 %package sdt-dtrace
 Summary: Static probe support dtrace tool
@@ -734,6 +742,8 @@ mkdir -p %{buildroot}%{_sysusersdir}
 echo '%_systemtap_runtime_preinstall' > %{buildroot}%{_sysusersdir}/systemtap-runtime.conf
 echo '%_systemtap_server_preinstall' > %{buildroot}%{_sysusersdir}/systemtap-server.conf
 echo '%_systemtap_testsuite_preinstall' > %{buildroot}%{_sysusersdir}/systemtap-testsuite.conf
+mkdir -p %{buildroot}%{_tmpfilesdir}
+echo '%_systemtap_server_preinstall_tmpfiles' > %{buildroot}%{_tmpfilesdir}/systemtap-server.conf
 %endif
 
 
@@ -876,15 +886,23 @@ getent group stapusr >/dev/null || groupadd -f -g 156 -r stapusr
 getent group stapsys >/dev/null || groupadd -f -g 157 -r stapsys
 getent group stapdev >/dev/null || groupadd -f -g 158 -r stapdev
 getent passwd stapunpriv >/dev/null || \
-  useradd -c "Systemtap Unprivileged User" -u 159 -g stapunpriv -d %{_localstatedir}/lib/stapunpriv -r -s /sbin/nologin stapunpriv 2>/dev/null || \
-  useradd -c "Systemtap Unprivileged User" -g stapunpriv -d %{_localstatedir}/lib/stapunpriv -r -s /sbin/nologin stapunpriv
+  useradd -c "Systemtap Unprivileged User" -u 159 -g stapunpriv -d / -r -s /sbin/nologin stapunpriv 2>/dev/null || \
+  useradd -c "Systemtap Unprivileged User" -g stapunpriv -d / -r -s /sbin/nologin stapunpriv
 exit 0
 %endif
+
+%post runtime
+# stapunpriv is a system user not needing a homedir.  Previously, specfile did
+# set a homedir, but didn't create it.  Fresh installations now set "/" as the
+# homedir via _systemtap_runtime_preinstall, as SYSUSERS.D(5) recommends.  Fix
+# existing broken installations, keep upgrade path clean.  Related: RHEL-130244.
+getent passwd stapunpriv | cut -d: -f6 | grep -q '^/var/lib/stapunpriv$' && usermod -d / stapunpriv ||:
 
 %pre server
 %if %{with_sysusers}
 %if (0%{?fedora} && 0%{?fedora} < 42) || (0%{?rhel} && 0%{?rhel} < 11)
 echo '%_systemtap_server_preinstall' | systemd-sysusers --replace=%{_sysusersdir}/systemtap-server.conf -
+echo '%_systemtap_server_preinstall_tmpfiles' | systemd-tmpfiles --replace=%{_tmpfilesdir}/systemtap-server.conf -
 exit 0
 %endif
 %else
@@ -1117,6 +1135,7 @@ exit 0
 %if %{with_systemd}
 %{_unitdir}/stap-server.service
 %{_tmpfilesdir}/stap-server.conf
+%{_tmpfilesdir}/systemtap-server.conf
 %else
 %{initdir}/stap-server
 %dir %{_sysconfdir}/stap-server/conf.d
@@ -1353,6 +1372,20 @@ exit 0
 
 # PRERELEASE
 %changelog
+* Tue Dec 2 2025 Martin Cermak <mcermak@redhat.com> - 5.4-4
+- Fix RHEL-132676
+
+* Fri Nov 28 2025 Martin Cermak <mcermak@redhat.com> - 5.4-3
+- Fix RHEL-130244
+
+* Thu Nov 13 2025 Martin Cermak <mcermak@redhat.com> - 5.4-2
+- Backport upstream patch 53c48b550 imply kernel<vmlinux.h>
+  check by file name.
+
+* Fri Oct 31 2025 Frank Ch. Eigler <fche@redhat.com> - 5.4-1
+- Upstream release, see wiki page below for detailed notes.
+  https://sourceware.org/systemtap/wiki/SystemTapReleases
+
 * Thu Jun 5 2025 William Cohen <wcohen@redhat.com> - 5.3-3
 - RHEL-90805: Update dev.stp tapset to handle RHEL-9.7 kernels.
 

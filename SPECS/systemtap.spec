@@ -130,8 +130,8 @@ f /var/log/stap-server/log 0644 stap-server stap-server -
 
 Name: systemtap
 # PRERELEASE
-Version: 5.4
-Release: 4%{?release_override}%{?dist}
+Version: 5.5
+Release: 2%{?release_override}%{?dist}
 # for version, see also configure.ac
 
 
@@ -168,8 +168,7 @@ Summary: Programmable system-wide instrumentation system
 License: GPL-2.0-or-later
 URL: https://sourceware.org/systemtap/
 Source: ftp://sourceware.org/pub/systemtap/releases/systemtap-%{version}.tar.gz
-
-Patch1: 0001-PR33428-imply-kernel-vmlinux-h.patch
+Patch0: systemtap-mok-sha1-fix.patch
 
 # Build*
 BuildRequires: make
@@ -219,7 +218,7 @@ BuildRequires: xmlto /usr/share/xmlto/format/fo/pdf
 %endif
 %if %{with_emacsvim}
 # for _emacs_sitelispdir macros etc.
-BuildRequires: emacs
+BuildRequires: emacs-common
 %endif
 %if %{with_java}
 BuildRequires: java-devel
@@ -338,6 +337,9 @@ Summary: Programmable system-wide instrumentation system - runtime
 License: GPL-2.0-or-later
 URL: https://sourceware.org/systemtap/
 Requires(pre): shadow-utils
+%if 0%{?fedora} >= 45 || 0%{?rhel} >= 11
+Recommends: yama-ptrace-enable
+%endif
 Conflicts: systemtap-devel < %{version}-%{release}
 Conflicts: systemtap-server < %{version}-%{release}
 Conflicts: systemtap-client < %{version}-%{release}
@@ -450,10 +452,12 @@ Conflicts: systemtap-testsuite = %{version}-%{release}.x86_64
 Requires: gcc gcc-c++ make glibc-devel
 # testsuite/systemtap.base/ptrace.exp needs strace
 Requires: strace
-# testsuite/systemtap.base/ipaddr.exp needs nc. Unfortunately, the rpm
+# testsuite/systemtap.base/ipaddr.exp needs nc or ncat. Unfortunately, the rpm
 # that provides nc has changed over time (from 'nc' to
-# 'nmap-ncat'). So, we'll do a file-based require.
-Requires: /usr/bin/nc
+# 'nmap-ncat'). So, we'll do a file-based recommend.
+Recommends: /usr/bin/nc
+# Suggest nmap-ncat for /usr/bin/ncat
+Recommends: /usr/bin/ncat
 %ifnarch ia64 ppc64le aarch64
 %if 0%{?fedora} >= 21 || 0%{?rhel} >= 8
 # no prelink
@@ -614,7 +618,8 @@ or within a container.
 # ------------------------------------------------------------------------
 
 %prep
-%autosetup -p1
+%setup -q
+%patch -P0 -p1
 
 %build
 
@@ -1372,6 +1377,13 @@ exit 0
 
 # PRERELEASE
 %changelog
+* Mon Jun 01 2026 Martin Cermak <mcermak@redhat.com> - 5.5-2
+- Systemtap 5.5 doesn't work in SecureBoot mode
+
+* Fri May 01 2026 Frank Ch. Eigler <fche@redhat.com> - 5.5-1
+- Upstream release, see wiki page below for detailed notes.
+  https://sourceware.org/systemtap/wiki/SystemTapReleases
+
 * Tue Dec 2 2025 Martin Cermak <mcermak@redhat.com> - 5.4-4
 - Fix RHEL-132676
 

@@ -1,0 +1,52 @@
+commit 41b6fa81922e2c7ba6a19f769167160b98e42bd1
+Author: Martin Cermak <mcermak@redhat.com>
+Date:   Mon Jun 1 17:40:32 2026 +0200
+
+    Use SHA1 for MOK directory naming and matching
+    
+    Commit a4bd43278 (April 2026) changed SystemTap to use SHA256 instead of
+    SHA1 for certificate fingerprinting, including MOK (Machine Owner Key)
+    directory naming and matching.  Mokutil (the system tool for managing
+    UEFI MOKs) is hardcoded to use SHA1 fingerprints.  That commit rendered
+    SystemTap incompatible with mokutil.
+    
+    Revert only the MOK fingerprint calculation back to SHA1 in
+    read_cert_info_from_file() while keeping SHA256 for the actual module
+    signing operation. This makes SystemTap's MOK directory names match what
+    mokutil displays.
+    
+    Assisted-by: Anthropic Claude
+
+diff --git a/nsscommon.cxx b/nsscommon.cxx
+index 5ab59ed8e..db88f6b8f 100644
+--- a/nsscommon.cxx
++++ b/nsscommon.cxx
+@@ -1962,12 +1962,16 @@ read_cert_info_from_file (const string &certPath, string &fingerprint)
+     }
+ 
+   // Get the fingerprint from the signature.
+-  unsigned char fingerprint_buf[32]; // SHA256_LENGTH
++  // Use SHA1 for MOK fingerprints to match mokutil behavior
++  // MOKutil always uses SHA1 fingerprints regardless of certificate signature algorithm
++  unsigned char fingerprint_buf[SHA1_LENGTH];
+   SECItem fpItem;
+-  rv = PK11_HashBuf(SEC_OID_SHA256, fingerprint_buf, derCert.data, derCert.len);
++  rv = PK11_HashBuf(SEC_OID_SHA1, fingerprint_buf, derCert.data, derCert.len);
+   if (rv)
+     {
+-      nsscommon_error (_F("Could not decode SHA256 fingerprint from file %s",
++      // Note: We use SHA1 for MOK fingerprints because mokutil (the UEFI MOK
++      // enrollment tool) always displays SHA1 fingerprints, not SHA256.
++      nsscommon_error (_F("Could not decode SHA1 fingerprint from file %s",
+ 			  certPath.c_str ()));
+       goto done;
+     }
+@@ -1976,7 +1980,7 @@ read_cert_info_from_file (const string &certPath, string &fingerprint)
+   str = CERT_Hexify(&fpItem, 1);
+   if (! str)
+   {
+-      nsscommon_error (_F("Could not hexify SHA256 fingerprint from file %s",
++      nsscommon_error (_F("Could not hexify SHA1 fingerprint from file %s",
+ 			  certPath.c_str ()));
+       goto done;
+   }
